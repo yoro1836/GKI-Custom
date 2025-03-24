@@ -13,11 +13,6 @@ on:
         type: boolean
         description: >
           Add susfs support
-      custom:
-        required: true
-        type: boolean
-        description: >
-          Enable LXC, Docker
       kernelsu:
         required: true
         type: boolean
@@ -41,15 +36,7 @@ jobs:
         mkdir android-kernel
         cd android-kernel
         git clone --depth=1 ${{ inputs.kernel_repo }} common
-
-    - name: Apply patches and configuration files
-      if: ${{ inputs.custom == true }}
-      run: |
-        cd $GITHUB_WORKSPACE
-        git clone https://github.com/yoro1836/GKI-Custom.git gki-patch
-        cd ./android-kernel/common
-        git apply $GITHUB_WORKSPACE/gki-patch/patchs/*.patch
-
+        
     - name: KernelSU
       if: ${{ inputs.kernelsu == true }}
       run: |
