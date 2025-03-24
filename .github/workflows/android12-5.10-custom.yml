@@ -48,12 +48,11 @@ jobs:
       run: |
           cd $GITHUB_WORKSPACE/android-kernel
           git clone -q --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 $GITHUB_WORKSPACE/android-kernel/susfs4ksu
-          SUSFS_PATCHES="$GITHUB_WORKSPACE/android-kernel/susfs4ksu/kernel_patches"
           cd $GITHUB_WORKSPACE/android-kernel/common
-          cp $SUSFS_PATCHES/include/linux/* ./include/linux/
-          cp $SUSFS_PATCHES/fs/* ./fs/
+          cp $GITHUB_WORKSPACE/android-kernel/susfs4ksu/kernel_patches/include/linux/* ./include/linux/
+          cp $GITHUB_WORKSPACE/android-kernel/susfs4ksu/kernel_patches/fs/* ./fs/
           SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
-          patch -p1 <"$SUSFS_PATCHES/50_add_susfs_in_gki-5.10.patch"
+          patch -p1 <"$GITHUB_WORKSPACE/android-kernel/susfs4ksu/kernel_patches/50_add_susfs_in_gki-5.10.patch"
           
     - name: Bomb setlocalversion
       run: |
