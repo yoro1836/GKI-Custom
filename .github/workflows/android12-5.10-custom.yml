@@ -3,24 +3,16 @@ name: Android12-5.10-Custom
 on: 
   workflow_dispatch:
     inputs:
-      os_patch_level:
+      kernel_repo:
         required: true
         type: string
         description: >
-          Patch level of common kernel manifest,
-          for example: 2024-05
-      os_version:
+          Kernel Repo
+      susfs:
         required: true
-        type: string
+        type: boolean
         description: >
-          OS Version of boot image
-          for example: 12.0.0
-      version_name:
-        required: true
-        type: string
-        description: >
-          With SUBLEVEL of kernel,
-          for example: android12-5.10.209
+          Add susfs support
       custom:
         required: true
         type: boolean
@@ -43,61 +35,74 @@ jobs:
       run: |
         sudo apt install repo wget -y
 
-    - name: Sync the kernel source code
+    - name: Clone the kernel source code
       run: |
         cd $GITHUB_WORKSPACE
         mkdir android-kernel
         cd android-kernel
-        repo init --depth 1 -u https://android.googlesource.com/kernel/manifest -b common-android12-5.10-${{ inputs.os_patch_level }}
-        repo sync
+        git clone --depth=1 ${{ inputs.kernel_repo }} common
 
     - name: Apply patches and configuration files
       if: ${{ inputs.custom == true }}
       run: |
         cd $GITHUB_WORKSPACE
         git clone https://github.com/TapetalArray/GKI-Custom.git gki-patch
-        cp ./gki-patch/config/gki_defconfig-android12-5.10 ./android-kernel/common/arch/arm64/configs/gki_defconfig
         cd ./android-kernel/common
         git apply $GITHUB_WORKSPACE/gki-patch/patchs/*.patch
 
     - name: KernelSU
       if: ${{ inputs.kernelsu == true }}
       run: |
+          cd $GITHUB_WORKSPACE/android-kernel/common
+          curl -LSs "https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh" | bash -s susfs-v1.5.5
+          
+    - name: Setup SUSFS
+      if: ${{ inputs.susfs == true }}
+      run: |
           cd $GITHUB_WORKSPACE/android-kernel
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-
+          git clone -q --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-5.10 $GITHUB_WORKSPACE/android-kernel/susfs4ksu
+          SUSFS_PATCHES="$GITHUB_WORKSPACE/android-kernel/susfs4ksu/kernel_patches"
+          cd $GITHUB_WORKSPACE/android-kernel/common
+          cp $SUSFS_PATCHES/include/linux/* ./include/linux/
+          cp $SUSFS_PATCHES/fs/* ./fs/
+          SUSFS_VERSION=$(grep -E '^#define SUSFS_VERSION' ./include/linux/susfs.h | cut -d' ' -f3 | sed 's/"//g')
+          patch -p1 <"$SUSFS_PATCHES/50_add_susfs_in_gki-5.10.patch"
+          
+    - name: Bomb setlocalversion
+      run: |
+          if grep -q '[-]dirty' scripts/setlocalversion; then
+          sed -i 's/-dirty//' scripts/setlocalversion
+          fi
+          if grep -q 'echo "+"' scripts/setlocalversion; then
+          sed -i 's/echo "+"/# echo "+"/g' scripts/setlocalversion
+          fi
+          
     - name: Build Kernel
       run: |
-        cd $GITHUB_WORKSPACE/android-kernel
-        BUILD_CONFIG=common/build.config.gki.aarch64 build/config.sh savedefconfig
-        LTO=thin BUILD_CONFIG=common/build.config.gki.aarch64 build/build.sh
-
+          MAKE_ARGS="
+          -j$(nproc --all)
+          ARCH=arm64 
+          LLVM=1
+          LLVM_IAS=1
+          O=$GITHUB_WORKSPACE/out
+          CROSS_COMPILE=aarch64-linux-gnu-
+          CROSS_COMPILE_COMPAT=arm-linux-gnueabi-
+          "
+          KERNEL_IMAGE=$GITHUB_WORKSPACE/out/arch/arm64/boot/Image
+          make $MAKE_ARGS gki_defconfig
+          make $MAKE_ARGS Image
+          
     - name: Prepare artifacts
       id: prepareArtifacts
       run: |
-        cd $GITHUB_WORKSPACE
-        OUTDIR=android-kernel/out/android12-5.10/dist
-        mkdir output
-        cp $OUTDIR/Image ./output/
-        cp $OUTDIR/Image.lz4 ./output/
-        cp $OUTDIR/Image ./
-        gzip -n -k -f -9 Image >Image.gz
-        git clone https://github.com/Kernel-SU/AnyKernel3
-        rm -rf ./AnyKernel3/.git
-        cp $OUTDIR/Image ./AnyKernel3/
-        wget https://dl.google.com/android/gki/gki-certified-boot-android12-5.10-${{ inputs.os_patch_level }}_r1.zip -O ./gki-kernel.zip
-        unzip -q ./gki-kernel.zip
-        rm ./gki-kernel.zip
-        cd $GITHUB_WORKSPACE/android-kernel
-        echo "Unpack boot"
-        ./tools/mkbootimg/unpack_bootimg.py --boot_img $GITHUB_WORKSPACE/boot*.img
-        echo "Build boot.img"
-        ./tools/mkbootimg/mkbootimg.py --header_version 4 --kernel out/android12-5.10/dist/Image --ramdisk out/ramdisk --os_version ${{ inputs.os_version }} --os_patch_level ${{ inputs.os_patch_level }} -o $GITHUB_WORKSPACE/output/${{ inputs.version_name }}_${{ inputs.os_patch_level }}-boot.img
-        echo "Build boot-lz4.img"
-        ./tools/mkbootimg/mkbootimg.py --header_version 4 --kernel out/android12-5.10/dist/Image.lz4 --ramdisk out/ramdisk --os_version ${{ inputs.os_version }} --os_patch_level ${{ inputs.os_patch_level }} -o $GITHUB_WORKSPACE/output/${{ inputs.version_name }}_${{ inputs.os_patch_level }}-boot-lz4.img
-        echo "Build boot-gz.img"
-        ./tools/mkbootimg/mkbootimg.py --header_version 4 --kernel $GITHUB_WORKSPACE/Image.gz --ramdisk out/ramdisk --os_version ${{ inputs.os_version }} --os_patch_level ${{ inputs.os_patch_level }} -o $GITHUB_WORKSPACE/output/${{ inputs.version_name }}_${{ inputs.os_patch_level }}-boot-gz.img
-
+          cd $GITHUB_WORKSPACE
+          OUTDIR=$GITHUB_WORKSPACE/out
+          mkdir output
+          cp $OUTDIR/Image ./output/
+          git clone https://github.com/Kernel-SU/AnyKernel3
+          rm -rf ./AnyKernel3/.git
+          cp $OUTDIR/Image ./AnyKernel3/
+        
     - name: Upload Image and Image.gz and boot.img
       uses: actions/upload-artifact@v4
       with:
