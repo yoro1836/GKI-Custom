@@ -47,7 +47,7 @@ jobs:
       if: ${{ inputs.susfs == true }}
       run: |
           cd $GITHUB_WORKSPACE/android-kernel
-          git clone -q --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-5.10 $GITHUB_WORKSPACE/android-kernel/susfs4ksu
+          git clone -q --depth=1 https://gitlab.com/simonpunk/susfs4ksu -b gki-android12-5.10 $GITHUB_WORKSPACE/android-kernel/susfs4ksu
           SUSFS_PATCHES="$GITHUB_WORKSPACE/android-kernel/susfs4ksu/kernel_patches"
           cd $GITHUB_WORKSPACE/android-kernel/common
           cp $SUSFS_PATCHES/include/linux/* ./include/linux/
