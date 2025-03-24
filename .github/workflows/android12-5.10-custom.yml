@@ -46,8 +46,7 @@ jobs:
       if: ${{ inputs.custom == true }}
       run: |
         cd $GITHUB_WORKSPACE
-        git config --global user.name "Yoro1836"
-        git clone https://github.com/TapetalArray/GKI-Custom.git gki-patch
+        git clone https://github.com/yoro1836/GKI-Custom.git gki-patch
         cd ./android-kernel/common
         git apply $GITHUB_WORKSPACE/gki-patch/patchs/*.patch
 
